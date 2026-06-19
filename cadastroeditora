@@ -1,0 +1,473 @@
+Crie a API de integração do GPT “Thuim Cadastro Musical” dentro do repositório GitHub existente:
+
+```text
+thuimjuridica/thuimeditora
+```
+
+Não crie outro repositório. Não altere, remova ou mova arquivos já existentes do site da Thuim.
+
+Crie todo o projeto exclusivamente nesta pasta:
+
+```text
+api/thuim-catalog-api
+```
+
+Objetivo: criar uma API serverless hospedada no Netlify para que um GPT personalizado do ChatGPT cadastre diretamente titulares, obras, participações autorais, fonogramas, direitos conexos, contratos, RDx e royalties na planilha oficial da Thuim Editora.
+
+A planilha oficial de origem é:
+
+```text
+https://docs.google.com/spreadsheets/d/1Av9W-MEbvHsEp5C6SC9h7DFqYIcqON21/edit
+```
+
+IMPORTANTE SOBRE A PLANILHA:
+
+* O arquivo atual pode estar em formato Excel `.xlsx`.
+* A gravação pela Google Sheets API somente poderá ocorrer depois de convertê-lo para Planilhas Google nativa.
+* Não grave o link da planilha no código.
+* Use a variável secreta `THUIM_SPREADSHEET_ID`.
+* O valor dessa variável será o ID da planilha convertida, informado posteriormente no Netlify.
+* A API deve aceitar somente essa planilha e bloquear qualquer outro ID ou URL.
+
+Estrutura obrigatória a ser criada:
+
+```text
+api/thuim-catalog-api/
+├── netlify.toml
+├── package.json
+├── README.md
+├── .gitignore
+├── public/
+│   └── index.html
+├── apps-script/
+│   └── Code.gs
+└── netlify/
+    └── functions/
+        ├── lib/
+        │   └── gateway.mjs
+        ├── health.mjs
+        ├── catalog-structure.mjs
+        ├── catalog-search.mjs
+        ├── catalog-preview.mjs
+        ├── catalog-commit.mjs
+        └── metadata-lookup.mjs
+```
+
+REGRAS GERAIS:
+
+* Use JavaScript ESM.
+* Não use framework.
+* Não use banco de dados externo nesta primeira versão.
+* Não use Cloudflare.
+* Não use redirects no `netlify.toml`.
+* Não exponha segredos, links privados, chaves ou dados pessoais no código ou nos logs.
+* Todas as respostas devem ser JSON.
+* Erros devem seguir este formato:
+
+```json
+{
+  "ok": false,
+  "error": "codigo_do_erro",
+  "message": "mensagem clara"
+}
+```
+
+Crie `package.json` com:
+
+* `"type": "module"`
+* projeto privado;
+* sem dependências externas;
+* script `build` simples e funcional.
+
+Crie `netlify.toml` com:
+
+```toml
+[build]
+  command = "npm run build"
+  publish = "public"
+  functions = "netlify/functions"
+```
+
+Crie `public/index.html` simples com a mensagem:
+
+```text
+Thuim Catalog API — online
+```
+
+As variáveis secretas do Netlify serão:
+
+```text
+THUIM_API_KEY
+GATEWAY_SECRET
+APPS_SCRIPT_URL
+THUIM_SPREADSHEET_ID
+```
+
+Função de cada variável:
+
+```text
+THUIM_API_KEY
+```
+
+Chave enviada pelo GPT no cabeçalho HTTP:
+
+```text
+X-API-Key
+```
+
+```text
+GATEWAY_SECRET
+```
+
+Segredo exclusivo entre Netlify Function e Google Apps Script.
+
+```text
+APPS_SCRIPT_URL
+```
+
+URL final `/exec` do Google Apps Script publicado como Web App.
+
+```text
+THUIM_SPREADSHEET_ID
+```
+
+ID da planilha convertida em Google Sheets nativa.
+
+Crie `netlify/functions/lib/gateway.mjs` com estas funções:
+
+1. Validar o cabeçalho `X-API-Key`.
+2. Comparar a chave recebida com `process.env.THUIM_API_KEY`.
+3. Rejeitar chaves inválidas com HTTP 401.
+4. Verificar se `GATEWAY_SECRET`, `APPS_SCRIPT_URL` e `THUIM_SPREADSHEET_ID` estão configurados.
+5. Encaminhar toda requisição ao Google Apps Script por POST JSON.
+6. Enviar ao Apps Script este formato:
+
+```json
+{
+  "gatewaySecret": "valor de GATEWAY_SECRET",
+  "spreadsheetId": "valor de THUIM_SPREADSHEET_ID",
+  "operation": "nome_da_operacao",
+  "payload": {}
+}
+```
+
+7. Não aceitar que o usuário envie `gatewaySecret` ou `spreadsheetId`.
+8. Tratar erros de rede com HTTP 502.
+9. Não registrar chaves, documentos, CPF, CNPJ, contratos ou dados sensíveis em logs.
+10. Permitir somente métodos GET, POST e OPTIONS.
+
+Crie as Functions abaixo usando `export default async (req, context) => {}` e `export const config = { path: "...", method: "..." }`.
+
+### 1. health.mjs
+
+Rota:
+
+```text
+GET /health
+```
+
+Operação enviada ao Apps Script:
+
+```text
+health
+```
+
+### 2. catalog-structure.mjs
+
+Rota:
+
+```text
+GET /catalog/structure
+```
+
+Operação:
+
+```text
+catalogStructure
+```
+
+### 3. catalog-search.mjs
+
+Rota:
+
+```text
+POST /catalog/search
+```
+
+Operação:
+
+```text
+searchCatalog
+```
+
+Payload esperado:
+
+```json
+{
+  "entityType": "titular|obra|participacao_obra|fonograma|participacao_fonograma|contrato|rdx|royalty|todos",
+  "query": "ISRC, ISWC, nome, CPF/CNPJ, CAE/IPI, título, artista ou ID"
+}
+```
+
+### 4. catalog-preview.mjs
+
+Rota:
+
+```text
+POST /catalog/preview
+```
+
+Operação:
+
+```text
+previewCatalog
+```
+
+Payload esperado:
+
+```json
+{
+  "sourceDescription": "contrato, ficha, arquivo, declaração ou confirmação do usuário",
+  "duplicatePolicy": "reject_duplicates|skip_duplicates|flag_for_review",
+  "records": []
+}
+```
+
+### 5. catalog-commit.mjs
+
+Rota:
+
+```text
+POST /catalog/commit
+```
+
+Operação:
+
+```text
+commitCatalog
+```
+
+Payload esperado:
+
+```json
+{
+  "previewId": "identificador da prévia",
+  "confirmationPhrase": "CONFIRMAR CADASTRO"
+}
+```
+
+### 6. metadata-lookup.mjs
+
+Rota:
+
+```text
+POST /metadata/lookup
+```
+
+Operação:
+
+```text
+metadataLookup
+```
+
+Payload esperado:
+
+```json
+{
+  "query": "texto da consulta",
+  "entityType": "titular|obra|fonograma",
+  "identifiers": {
+    "isrc": "",
+    "iswc": "",
+    "ipi": "",
+    "cae": "",
+    "upc": ""
+  }
+}
+```
+
+Crie o arquivo `apps-script/Code.gs` para ser copiado no Google Apps Script.
+
+O Apps Script deve:
+
+1. Implementar `doGet(e)` e `doPost(e)`.
+2. Responder sempre JSON via `ContentService`.
+3. Ler propriedades:
+
+   * `GATEWAY_SECRET`
+   * `ALLOWED_SHEET_IDS`
+4. Ler `e.postData.contents` no método POST.
+5. Validar se `gatewaySecret` é igual à propriedade `GATEWAY_SECRET`.
+6. Validar se o `spreadsheetId` recebido está na lista `ALLOWED_SHEET_IDS`.
+7. Rejeitar qualquer planilha diferente da planilha oficial autorizada.
+8. Nunca aceitar URL de planilha enviada pelo cliente.
+9. Usar a linha 3 como cabeçalho e iniciar inserções somente na linha 5.
+10. Nunca alterar linhas 1 a 4.
+11. Nunca escrever na aba `DASHBOARD`.
+12. Nunca substituir campos calculados ou fórmulas.
+
+As abas permitidas são exatamente:
+
+```text
+TITULARES
+OBRAS
+PARTICIPAÇÕES OBRA
+FONOGRAMAS
+PARTICIPAÇÕES FONOGRAMA
+CONTRATOS & DIREITOS
+RDx CONTROLE
+ROYALTIES & AUDITORIA
+```
+
+A aba bloqueada é:
+
+```text
+DASHBOARD
+```
+
+Campos calculados que nunca podem receber escrita manual:
+
+```text
+OBRAS:
+- Total de Autoria
+- Validação do Split
+
+FONOGRAMAS:
+- Completude RDx
+- Total Participações Conexas
+- Validação Conexos
+
+CONTRATOS & DIREITOS:
+- Status Calculado
+
+ROYALTIES & AUDITORIA:
+- Receita Líquida
+- Valor Devido à Thuim
+- Diferença
+- Status de Conciliação
+```
+
+Implemente no Apps Script:
+
+### health
+
+Retorne:
+
+```json
+{
+  "ok": true,
+  "status": "online",
+  "spreadsheetConfigured": true,
+  "message": "Integração Thuim disponível."
+}
+```
+
+### catalogStructure
+
+Retorne:
+
+* abas permitidas;
+* aba bloqueada;
+* linha de cabeçalho;
+* primeira linha disponível para cadastro;
+* campos calculados bloqueados;
+* título da planilha configurada.
+
+### searchCatalog
+
+Pesquise dados existentes nas abas permitidas e retorne:
+
+* quantidade de resultados;
+* linha;
+* aba;
+* identificador;
+* resumo;
+* valores encontrados;
+* indicação de possível duplicidade.
+
+### previewCatalog
+
+Não grave dados.
+
+Valide:
+
+* se cada aba indicada é permitida;
+* se os campos enviados existem nos cabeçalhos da aba;
+* se não há tentativa de preencher campo calculado;
+* se não há tentativa de gravar no Dashboard;
+* se há possível duplicidade por ISRC, ISWC, CPF/CNPJ, CAE/IPI, ID, título ou nome;
+* se participações de obra totalizam 100%, quando houver dados suficientes;
+* se percentuais estão em formato válido;
+* se datas estão em formato `YYYY-MM-DD`.
+
+Retorne:
+
+* `previewId`;
+* validade máxima de 20 minutos;
+* registros preparados;
+* total de inserções;
+* total de atualizações;
+* duplicidades;
+* pendências;
+* alertas;
+* campos bloqueados;
+* `validForCommit`.
+
+### commitCatalog
+
+Nesta primeira versão, implemente gravação somente quando:
+
+* houver `previewId` válida;
+* a prévia não estiver expirada;
+* o texto recebido for exatamente `CONFIRMAR CADASTRO`;
+* não houver campos bloqueados;
+* não houver conflito não resolvido;
+* todos os registros forem dirigidos às abas permitidas.
+
+A gravação deve:
+
+* inserir nova linha a partir da linha 5;
+* atualizar somente registros localizados previamente e aprovados;
+* manter formatação e fórmulas existentes;
+* registrar um log interno no `PropertiesService`, contendo data, operação, aba, linha e IDs, sem dados pessoais completos.
+
+Retorne:
+
+* registros inseridos;
+* registros atualizados;
+* linhas;
+* IDs;
+* pendências remanescentes.
+
+### metadataLookup
+
+Nesta primeira versão, não conecte fontes externas reais. Retorne:
+
+```json
+{
+  "ok": true,
+  "status": "not_configured",
+  "message": "Consulta externa ainda não conectada. Utilize arquivos enviados e confirmação documental."
+}
+```
+
+Crie também um `README.md` com:
+
+1. Como conectar o repositório `thuimeditora` ao Netlify.
+2. Configuração do Netlify:
+
+   * Branch: `main`
+   * Base directory: `api/thuim-catalog-api`
+   * Build command: `npm run build`
+   * Publish directory: `public`
+   * Functions directory: `netlify/functions`
+3. Como cadastrar as quatro variáveis de ambiente.
+4. Como publicar o Apps Script.
+5. Como criar as propriedades `GATEWAY_SECRET` e `ALLOWED_SHEET_IDS`.
+6. Como configurar o domínio `api.thuim.com.br`.
+7. Exemplos `curl` para `/health`, `/catalog/structure`, `/catalog/search`, `/catalog/preview` e `/catalog/commit`.
+8. Aviso: primeiro testar em uma cópia da planilha convertida antes de habilitar a planilha oficial.
+
+Ao final, gere todos os arquivos dentro de `api/thuim-catalog-api`, apresente uma prévia completa das alterações e não faça deploy automático.
+
+
